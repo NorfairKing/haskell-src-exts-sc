@@ -8,7 +8,7 @@ module Language.Haskell.Exts.SimpleComments
   , ppWithCommentsMode
   , ppWithComments
     -- * Convenience functions
-  , preComment, postComment, secComment
+  , preComment, fieldDeclPreComment, postComment, secComment
   ) where
 
 import           Control.Monad                   (forM, forM_, join)
@@ -36,12 +36,15 @@ data CodeComment
     -- ^ Special character to prepend to the first line keeping the alignment;
     --   e.g. '*' for haddock sections, '|' for top-level haddock declarations.
     --   If ' '(space) is used, no additional indentation is added.
+  , ccExtraSpaceBefore :: Bool
+    -- ^ Whether to put an extra space before the comment.
+    -- This is fine within declarations, but not at the top level
   , ccTxt :: !String
     -- ^ Content of a comment (can be multiline)
   } deriving (Eq, Show, Read)
 
 instance IsString CodeComment where
-  fromString = CodeComment NextToCode ' '
+  fromString = CodeComment NextToCode ' ' False
 
 -- | Where to place a comment, relative to an AST node
 data CommentPos = AboveCode | BelowCode | NextToCode
@@ -51,18 +54,23 @@ data CommentPos = AboveCode | BelowCode | NextToCode
 -- | Add haddock-style comment above some definition
 preComment :: String -> Maybe CodeComment
 preComment "" = Nothing
-preComment s  = Just $ CodeComment AboveCode '|' s
+preComment s  = Just $ CodeComment AboveCode '|' False s
+
+-- | Add haddock-style comment above a field declaration
+fieldDeclPreComment :: String -> Maybe CodeComment
+fieldDeclPreComment "" = Nothing
+fieldDeclPreComment s  = Just $ CodeComment AboveCode '|' True s
 
 -- | Add haddock-style comment below some definition
 postComment :: String -> Maybe CodeComment
 postComment "" = Nothing
-postComment s  = Just $ CodeComment BelowCode '^' s
+postComment s  = Just $ CodeComment BelowCode '^' False s
 
 -- | Add haddock-style section ('*'),
 --    use it on definitions in an export list.
 secComment :: String -> Maybe CodeComment
 secComment "" = Nothing
-secComment s  = Just $ CodeComment AboveCode '*' s
+secComment s  = Just $ CodeComment AboveCode '*' False s
 
 
 -- | `ppWithCommentsMode` with default mode
@@ -156,7 +164,7 @@ insertComments :: SrcLoc
 insertComments cmtLoc@(SrcLoc _ startL _)
                       (SrcLoc _ shiftL shiftC) com = (f, cmts)
   where
-    cmts = mkComments cmtLoc (ccSym com) (ccTxt com)
+    cmts = mkComments cmtLoc (ccSym com) (ccExtraSpaceBefore com) (ccTxt com)
     lineN = length cmts + startL - shiftL
     f SrcSpanInfo {srcInfoSpan = s, srcInfoPoints = ps}
       = let gs = g s
@@ -220,9 +228,10 @@ evalLoc NextToCode SrcSpan {..} shiftRight = (locStart, locShift)
 -- | Make a textual comment into a documentation.
 mkComments :: SrcLoc -- ^ location of the comment start
            -> Char -- ^ special comment character (i.e. "*" or "^" or "|")
+           -> Bool -- ^ whether to add an extra space
            -> String -- ^ text to put into a comment (multiline)
            -> [Comment]
-mkComments SrcLoc {..} c txt = mkComment srcLine lns
+mkComments SrcLoc {..} c extraSpace txt = mkComment srcLine lns
   where
     lns = indent $ lines txt
     indent []     = []
@@ -232,5 +241,5 @@ mkComments SrcLoc {..} c txt = mkComment srcLine lns
     mkComment _ [] = []
     mkComment i (x:xs)
       = Comment False
-        (SrcSpan srcFilename i srcColumn i $ srcColumn + 2 + length x) x
+        (SrcSpan srcFilename i ((if extraSpace then (+ 1) else id) $ srcColumn) i $ srcColumn + 2 + length x) x
         : mkComment (i+1) xs
