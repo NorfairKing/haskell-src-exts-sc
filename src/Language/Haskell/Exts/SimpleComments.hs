@@ -228,7 +228,7 @@ mkComments SrcLoc {..} c txt = mkComment srcLine lns
     indent []     = []
     indent (x:xs) = if c == ' '
                     then map (' ':) (x:xs)
-                    else (' ':c:' ':x) : map ("   " ++) xs
+                    else (' ':c:' ':x) : map (' ':) xs
     mkComment _ [] = []
     mkComment i (x:xs)
       = Comment False
